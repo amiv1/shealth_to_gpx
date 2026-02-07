@@ -41,46 +41,22 @@ def _merge_tracks(tracks):
     return [result[key] for key in sorted(result.keys())]
 
 
-EXERCISE_RE = re.compile('^((?:\w+-?)+)\.(.+)\.json$')
+EXERCISE_RE = re.compile(r'\.com\.samsung\.health\.exercise\.(live_data|location_data)\.json$')
 SUPPORTED_TYPES = {'live_data', 'location_data'}
 MIN_RECORDS_COUNT = 100
-MAX_FILES_PER_LOAD = 25
 
-if len(sys.argv) < 2:
-    print('Path argument missing')
-    print('Usage: python3 samsung_json_to_gpx.py /path/to/unpacked/zip/')
-    sys.exit(1)
-
-base_path = sys.argv[1]
-if not os.path.exists(base_path) or not os.path.isdir(base_path):
-    print('Seems like directory "{}" does not exist'.format(base_path))
-    sys.exit(2)
-
-jsons_path = os.path.join(base_path, 'jsons/com.samsung.health.exercise/')
-if not os.path.exists(jsons_path):
-    print('Seems like directory is invalid. Missing directory with exercises at "{}"'.format(jsons_path))
-    sys.exit(3)
-
-files = sorted(os.scandir(path=jsons_path), key=lambda f: f.name)
-
-exercises = defaultdict(lambda: [])
-for f in files:
-    match = EXERCISE_RE.match(f.name)
-    if match and match.group(2) in SUPPORTED_TYPES:
-        exercises[match.group(1)].append({
-            'path': f.path,
-            'type': match.group(2)
-        })
-
+# Global counters
 converted_cnt = 0
 small_cnt = 0
 invalid_cnt = 0
-for name, values in exercises.items():
-    written = 0
+
+def process_exercise(name, values):
+    global converted_cnt, small_cnt, invalid_cnt
+    
     if not _get_file_with_type(values, 'location_data'):
         print('Skip track {}: missing location data'.format(name))
         invalid_cnt += 1
-        continue
+        return
 
     if not os.path.exists('./output/'):
         os.mkdir('./output')
@@ -94,7 +70,9 @@ for name, values in exercises.items():
     if len(data) < MIN_RECORDS_COUNT:
         print('Empty or small track {}'.format(name))
         small_cnt += 1
-        continue
+        return
+    
+    written = 0
 
     start_unix = data[0]['start_time']
 
@@ -142,13 +120,60 @@ for name, values in exercises.items():
     ])
 
     print('Save track {} with {} points'.format(name, written))
-    out_dir = './output/{}'.format(converted_cnt // MAX_FILES_PER_LOAD)
-    if not os.path.exists(out_dir):
-        os.mkdir(out_dir)
-    out_path = '{}/{}.gpx'.format(out_dir, name)
+    out_path = './output/{}.gpx'.format(name)
     with open(out_path, 'w+') as out:
         out.write('\n'.join(output_data))
     converted_cnt += 1
+
+if len(sys.argv) < 2:
+    print('Path argument missing')
+    print('Usage: python3 samsung_json_to_gpx.py /path/to/unpacked/zip/')
+    sys.exit(1)
+
+base_path = sys.argv[1]
+if not os.path.exists(base_path) or not os.path.isdir(base_path):
+    print('Seems like directory "{}" does not exist'.format(base_path))
+    sys.exit(2)
+
+jsons_path = os.path.join(base_path, 'jsons/com.samsung.shealth.exercise/')
+if not os.path.exists(jsons_path):
+    print('Seems like directory is invalid. Missing directory with exercises at "{}"'.format(jsons_path))
+    sys.exit(3)
+
+# Collect exercises by UUID
+exercises = defaultdict(lambda: [])
+file_count = 0
+processed_count = 0
+
+print('Scanning for exercise files...')
+for root, dirs, files in os.walk(jsons_path):
+    for filename in files:
+        match = EXERCISE_RE.search(filename)
+        if match:
+            file_count += 1
+            # Extract UUID from filename (everything before .com.samsung...)
+            uuid = filename.split('.com.samsung')[0]
+            exercise_type = match.group(1)
+            exercises[uuid].append({
+                'path': os.path.join(root, filename),
+                'type': exercise_type
+            })
+            
+            # Process immediately if we have both files
+            if len(exercises[uuid]) == 2:
+                processed_count += 1
+                print(f'Processing exercise {processed_count}: {uuid[:8]}... (found both files)')
+                process_exercise(uuid, exercises[uuid])
+                del exercises[uuid]  # Free memory
+
+print(f'Found {file_count} exercise files, {processed_count} complete pairs')
+print(f'Processing remaining {len(exercises)} exercises...')
+
+# Process remaining exercises with only one file type
+for uuid, values in exercises.items():
+    processed_count += 1
+    print(f'Processing exercise {processed_count}: {uuid[:8]}... ({len(values)} file(s))')
+    process_exercise(uuid, values)
 
 print('Done')
 print('Converted: {}, Small: {}, Invalid: {}'.format(converted_cnt, small_cnt, invalid_cnt))
