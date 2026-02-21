@@ -119,8 +119,9 @@ def process_exercise(name, values):
         '</gpx>'
     ])
 
+    exercise_dt = time.strftime('%Y%m%d_%H%M%S', _date_from_long_unix_str(start_unix).timetuple())
     print('Save track {} with {} points'.format(name, written))
-    out_path = './output/{}.gpx'.format(name)
+    out_path = './output/{}.gpx'.format(exercise_dt)
     with open(out_path, 'w+') as out:
         out.write('\n'.join(output_data))
     converted_cnt += 1
