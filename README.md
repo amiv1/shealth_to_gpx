@@ -9,4 +9,4 @@ Simple batch converter for Samsung Health tracks to GPX.
 ```
 python3 samsung_json_to_gpx.py /path/to/samsung/export/files/
 ```
-3. Import GPX to Strava or whatever you want
+3. Import GPX from `output/` directory to any application that supports it
